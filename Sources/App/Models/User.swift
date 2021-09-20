@@ -1,5 +1,6 @@
 import Fluent
 import Vapor
+import JWT
 
 
 struct Credentials: Codable, Validatable {
@@ -14,8 +15,18 @@ struct Credentials: Codable, Validatable {
     }
 }
 
+struct Session: Content {
+    let token: String
+    let user: String
+}
+
 
 final class User: Model, Content {
+    struct Public: Content {
+        let username: String
+        let id: UUID
+    }
+    
     static let schema = "users"
     
     @ID(key: .id)
@@ -40,8 +51,31 @@ final class User: Model, Content {
         self.hashedPassword = try BCryptDigest().hash(password)
     }
     
-   public func matchesPassword(_ password: String) throws -> Bool {
+    func matchesPassword(_ password: String) throws -> Bool {
         return try BCryptDigest().verify(password, created: self.hashedPassword)
+    }
+    
+    func createToken(source: SessionSource) throws -> Token {
+      let calendar = Calendar(identifier: .gregorian)
+        let expiryDate = calendar.date(byAdding: .month, value: 1, to: Date())
+      return try Token(
+        userId: requireID(),
+        token: [UInt8].random(count: 16).base64,
+        source: source,
+        expiresAt: expiryDate)
+    }
+    
+    func asPublic() throws -> Public {
+        Public(username: username, id: try requireID())
     }
 }
 
+
+extension User: ModelAuthenticatable {
+    static let usernameKey = \User.$username
+    static let passwordHashKey = \User.$hashedPassword
+    
+    func verify(password: String) throws -> Bool {
+        try BCryptDigest().verify(password, created: self.hashedPassword)
+    }
+}

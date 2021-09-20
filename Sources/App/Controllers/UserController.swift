@@ -4,33 +4,29 @@ import Vapor
 struct UserController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let auth = routes.grouped("auth")
-        auth.post("login", use: entry)
+        
         auth.post("signup", use: create)
         
-        func entry(req: Request) throws -> EventLoopFuture<Response> {
-            try Credentials.validate(content: req)
-            let credentials = try req.content.decode(Credentials.self)
-            
-            return User.query(on: req.db)
-                .filter(\.$username == credentials.username)
-                .first()
-                .flatMap { user in
-                    do {
-                        guard let user = user,
-                              try user.matchesPassword(credentials.password)
-                        else {
-                            throw Abort(.notFound, reason: "Bad Credetials")
-                        }
-                        let res = req.redirect(to: "/")
-                        return req.eventLoop.makeSucceededFuture(res)
-                    } catch {
-                        return req.eventLoop.makeFailedFuture(error)
-                    }
+        let passwordProtected = auth.grouped(User.authenticator())
+        passwordProtected.post("login", use: entry)
+        
+        let tokenProtected = auth.grouped(Token.authenticator())
+        tokenProtected.get("me", use: getUser)
+        
+        
+        
+        
+        func entry(req: Request) throws -> EventLoopFuture<Session> {
+            let user: User = try req.auth.require(User.self)
+            let token = try user.createToken(source: .login)
+            return token.create(on: req.db)
+                .flatMapThrowing {
+                    Session(token: token.value, user: user.username)
                 }
         }
         
         
-        func create(req: Request) throws -> EventLoopFuture<Response> {
+        func create(req: Request) throws -> EventLoopFuture<Session> {
             try Credentials.validate(content: req)
             let credentials = try req.content.decode(Credentials.self)
             
@@ -44,14 +40,21 @@ struct UserController: RouteCollection {
                             throw Abort(.badRequest, reason: "User Exists")
                         }
                         let newUser = try User(credentials)
-                        newUser.create(on: req.db)
-                        
-                        let res = req.redirect(to: "/")
-                        return req.eventLoop.makeSucceededFuture(res)
+                        let _ = newUser.create(on: req.db)
+                        guard let newToken = try? newUser.createToken(source: .signup) else {
+                            return req.eventLoop.future(error: Abort(.internalServerError))
+                        }
+                        let _ = newToken.create(on: req.db)
+                        return req.eventLoop.makeSucceededFuture(Session(token: newToken.value, user: newUser.username))
+
                     } catch {
                         return req.eventLoop.makeFailedFuture(error)
                     }
                 }
+        }
+        
+        func getUser(req: Request) throws -> User.Public {
+            try req.auth.require(User.self).asPublic()
         }
     }
 }

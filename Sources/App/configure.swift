@@ -1,18 +1,19 @@
 import Fluent
 import FluentMongoDriver
 import Vapor
+import JWT
 
-// configures your application
+
 public func configure(_ app: Application) throws {
-    // uncomment to serve files from /Public folder
-    // app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
 
     try app.databases.use(.mongo(
         connectionString: Environment.get("DATABASE_URL") ?? "mongodb://localhost:27017/trueviador"
     ), as: .mongo)
-
+    
+    app.jwt.signers.use(.hs512(key: Environment.get("SECRET") ?? "secret"))
+    
+    app.migrations.add(CreateTokens())
     app.migrations.add(CreateUser())
 
-    // register routes
     try routes(app)
 }
