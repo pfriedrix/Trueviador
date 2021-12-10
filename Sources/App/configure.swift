@@ -14,6 +14,8 @@ public func configure(_ app: Application) throws {
     
     app.migrations.add(CreateTokens())
     app.migrations.add(CreateUser())
+    
+    app.middleware.use(app.sessions.middleware)
 
     try routes(app)
 }

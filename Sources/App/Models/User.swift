@@ -20,6 +20,10 @@ struct Session: Content {
     let user: String
 }
 
+enum OAuthService: String, Codable {
+    case github, google
+}
+
 
 final class User: Model, Content {
     struct Public: Content {
@@ -37,6 +41,9 @@ final class User: Model, Content {
     
     @Field(key: "hashedPassword")
     var hashedPassword: String
+    
+    @OptionalEnum(key: "service")
+    var service: OAuthService?
 
     init() { }
     
@@ -45,10 +52,11 @@ final class User: Model, Content {
         self.hashedPassword = try BCryptDigest().hash(credetials.password)
     }
 
-    init(id: UUID? = nil, username: String, password: String) throws {
+    init(id: UUID? = nil, username: String, password: String, service: OAuthService?) throws {
         self.id = id
         self.username = username
         self.hashedPassword = try BCryptDigest().hash(password)
+        self.service = service
     }
     
     func matchesPassword(_ password: String) throws -> Bool {
